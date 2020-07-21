@@ -115,6 +115,34 @@ func (client *SchemaRegistryClient) GetVersions(subject string) ([]int, error) {
 	return result, err
 }
 
+// GetFullInfo for a subject
+func (client *SchemaRegistryClient) GetFullInfo(subject string) (version int, scheme string, id int, err error) {
+	resp, err := client.httpCall("GET", fmt.Sprintf(subjectByVersion, subject, latestVersion), nil)
+	if nil != err {
+		return -1, "", -1, err
+	}
+	var schema = new(schemaVersionResponse)
+	err = json.Unmarshal(resp, &schema)
+	if nil != err {
+		return -1, "", -1, err
+	}
+	return schema.Version, schema.Schema, schema.ID, err
+}
+
+// GetSchemaID returns the schema ID for a given schema
+func (client *SchemaRegistryClient) GetSchemaID(subject string) (int, error) {
+	resp, err := client.httpCall("GET", fmt.Sprintf(subjectByVersion, subject, latestVersion), nil)
+	if nil != err {
+		return -1, err
+	}
+	var schema = new(schemaVersionResponse)
+	err = json.Unmarshal(resp, &schema)
+	if nil != err {
+		return -1, err
+	}
+	return schema.ID, nil
+}
+
 func (client *SchemaRegistryClient) getSchemaByVersionInternal(subject string, version string) (*goavro.Codec, error) {
 	resp, err := client.httpCall("GET", fmt.Sprintf(subjectByVersion, subject, version), nil)
 	if nil != err {

@@ -1,27 +1,48 @@
 package kafka
 
 import (
-	"github.com/linkedin/goavro/v2"
 	"sync"
+
+	"github.com/linkedin/goavro/v2"
 )
 
 // CachedSchemaRegistryClient is a schema registry client that will cache some data to improve performance
 type CachedSchemaRegistryClient struct {
-	SchemaRegistryClient *SchemaRegistryClient
-	schemaCache          map[int]*goavro.Codec
-	schemaCacheLock      sync.RWMutex
-	schemaIdCache        map[string]int
-	schemaIdCacheLock    sync.RWMutex
+	SchemaRegistryClient       *SchemaRegistryClient
+	schemaCache                map[int]*goavro.Codec
+	schemaCacheLock            sync.RWMutex
+	schemaIdCache              map[string]int
+	schemaIdCacheLock          sync.RWMutex
+	schemaIdBySubjectCache     map[string]int
+	schemaIdBySubjectCacheLock sync.RWMutex
 }
 
 func NewCachedSchemaRegistryClient(connect []string) *CachedSchemaRegistryClient {
 	SchemaRegistryClient := NewSchemaRegistryClient(connect)
-	return &CachedSchemaRegistryClient{SchemaRegistryClient: SchemaRegistryClient, schemaCache: make(map[int]*goavro.Codec), schemaIdCache: make(map[string]int)}
+	return &CachedSchemaRegistryClient{SchemaRegistryClient: SchemaRegistryClient, schemaCache: make(map[int]*goavro.Codec), schemaIdCache: make(map[string]int), schemaIdBySubjectCache: make(map[string]int)}
 }
 
 func NewCachedSchemaRegistryClientWithRetries(connect []string, retries int) *CachedSchemaRegistryClient {
 	SchemaRegistryClient := NewSchemaRegistryClientWithRetries(connect, retries)
-	return &CachedSchemaRegistryClient{SchemaRegistryClient: SchemaRegistryClient, schemaCache: make(map[int]*goavro.Codec), schemaIdCache: make(map[string]int)}
+	return &CachedSchemaRegistryClient{SchemaRegistryClient: SchemaRegistryClient, schemaCache: make(map[int]*goavro.Codec), schemaIdCache: make(map[string]int), schemaIdBySubjectCache: make(map[string]int)}
+}
+
+// GetSchemaID gets the schema ID from cache or from schema registry if it is missing
+func (client *CachedSchemaRegistryClient) GetSchemaID(subject string) (int, error) {
+	client.schemaIdBySubjectCacheLock.RLock()
+	cachedResult, found := client.schemaIdCache[subject]
+	client.schemaIdBySubjectCacheLock.RUnlock()
+	if found {
+		return cachedResult, nil
+	}
+	id, err := client.SchemaRegistryClient.GetSchemaID(subject)
+	if err != nil {
+		return id, err
+	}
+	client.schemaIdBySubjectCacheLock.Lock()
+	client.schemaIdBySubjectCache[subject] = id
+	client.schemaIdBySubjectCacheLock.Unlock()
+	return id, nil
 }
 
 // GetSchema will return and cache the codec with the given id
@@ -78,6 +99,9 @@ func (client *CachedSchemaRegistryClient) CreateSubject(subject string, codec *g
 	client.schemaIdCacheLock.Lock()
 	client.schemaIdCache[schemaJson] = id
 	client.schemaIdCacheLock.Unlock()
+	client.schemaIdBySubjectCacheLock.Lock()
+	client.schemaIdBySubjectCache[subject] = id
+	client.schemaIdBySubjectCacheLock.Unlock()
 	return id, nil
 }
 
