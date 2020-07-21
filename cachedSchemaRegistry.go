@@ -30,7 +30,7 @@ func NewCachedSchemaRegistryClientWithRetries(connect []string, retries int) *Ca
 // GetSchemaID gets the schema ID from cache or from schema registry if it is missing
 func (client *CachedSchemaRegistryClient) GetSchemaID(subject string) (int, error) {
 	client.schemaIdBySubjectCacheLock.RLock()
-	cachedResult, found := client.schemaIdCache[subject]
+	cachedResult, found := client.schemaIdBySubjectCache[subject]
 	client.schemaIdBySubjectCacheLock.RUnlock()
 	if found {
 		return cachedResult, nil
