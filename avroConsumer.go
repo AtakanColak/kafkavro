@@ -2,11 +2,12 @@ package kafka
 
 import (
 	"encoding/binary"
-	"github.com/Shopify/sarama"
-	"github.com/bsm/sarama-cluster"
-	"github.com/linkedin/goavro/v2"
 	"os"
 	"os/signal"
+
+	"github.com/Shopify/sarama"
+	cluster "github.com/bsm/sarama-cluster"
+	"github.com/linkedin/goavro/v2"
 )
 
 type avroConsumer struct {
@@ -39,6 +40,34 @@ func NewAvroConsumer(kafkaServers []string, schemaRegistryServers []string,
 	config.Group.Return.Notifications = true
 	//read from beginning at the first time
 	config.Consumer.Offsets.Initial = sarama.OffsetOldest
+	topics := []string{topic}
+	consumer, err := cluster.NewConsumer(kafkaServers, groupId, topics, config)
+	if err != nil {
+		return nil, err
+	}
+
+	schemaRegistryClient := NewCachedSchemaRegistryClient(schemaRegistryServers)
+	return &avroConsumer{
+		consumer,
+		schemaRegistryClient,
+		callbacks,
+	}, nil
+}
+
+func NewAvroConsumerWithSASL(kafkaServers []string, schemaRegistryServers []string, username, password, topic, groupId string, callbacks ConsumerCallbacks) (*avroConsumer, error) {
+	config := cluster.NewConfig()
+	config.Consumer.Return.Errors = true
+	config.Group.Return.Notifications = true
+	//read from beginning at the first time
+	config.Consumer.Offsets.Initial = sarama.OffsetOldest
+
+	config.Net.SASL.Enable = true
+	config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
+	config.Net.SASL.User = username
+	config.Net.SASL.Password = password
+	config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient { return &XDGSCRAMClient{HashGeneratorFcn: SHA256} }
+	config.Net.SASL.Mechanism = sarama.SASLMechanism(sarama.SASLTypeSCRAMSHA256)
+
 	topics := []string{topic}
 	consumer, err := cluster.NewConsumer(kafkaServers, groupId, topics, config)
 	if err != nil {

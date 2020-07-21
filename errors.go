@@ -24,3 +24,7 @@ func newError(resp *http.Response) *Error {
 	}
 	return err
 }
+
+func wrap(s string, err error) error {
+	return fmt.Errorf("%s : %w", s, err)
+}

@@ -8,4 +8,5 @@ require (
 	github.com/linkedin/goavro/v2 v2.9.0
 	github.com/onsi/ginkgo v1.10.2 // indirect
 	github.com/onsi/gomega v1.7.0 // indirect
+	github.com/xdg/scram v0.0.0-20180814205039-7eeb5667e42c
 )
