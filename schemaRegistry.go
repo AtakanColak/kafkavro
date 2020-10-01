@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net/http"
 	"time"
@@ -177,7 +176,6 @@ func (client *SchemaRegistryClient) CreateSubject(subject string, codec *goavro.
 	payload := bytes.NewBuffer(json)
 	resp, err := client.httpCall("POST", fmt.Sprintf(subjectVersions, subject), payload)
 	if err != nil {
-		log.Println(string(json))
 		return 0, err
 	}
 	return parseID(resp)
@@ -243,8 +241,6 @@ func (client *SchemaRegistryClient) httpCall(method, uri string, payload io.Read
 			return nil, wrap("resp", err)
 		}
 		if !okStatus(resp) {
-			log.Println("%#v\n\n", req)
-			log.Println("%#v", resp)
 			return nil, wrap("not ok status", newError(resp))
 		}
 		return ioutil.ReadAll(resp.Body)
