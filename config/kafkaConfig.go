@@ -1,4 +1,4 @@
-package kafkavro
+package config
 
 import (
 	"time"
@@ -7,9 +7,9 @@ import (
 	"github.com/toventang/eklog/scram"
 )
 
-// ProducerConfigDefault is used to initialize KafkaAvroConsumer
+// DefaultProducer is used to initialize KafkaAvroConsumer
 // WARNING customize at your own risk
-func ProducerConfigDefault() *sarama.Config {
+func DefaultProducer() *sarama.Config {
 	config := sarama.NewConfig()
 	config.Version = sarama.V2_0_1_0
 	config.Producer.Partitioner = sarama.NewHashPartitioner
@@ -22,9 +22,9 @@ func ProducerConfigDefault() *sarama.Config {
 	return config
 }
 
-// ConsumerConfigDefault is used to initialize KafkaAvroConsumer
+// DefaultConsumer is used to initialize KafkaAvroConsumer
 // WARNING customize at your own risk
-func ConsumerConfigDefault() *sarama.Config {
+func DefaultConsumer() *sarama.Config {
 	config := sarama.NewConfig()
 	config.Version = sarama.V2_0_1_0
 	config.Consumer.Return.Errors = true
@@ -32,8 +32,8 @@ func ConsumerConfigDefault() *sarama.Config {
 	return config
 }
 
-// ConfigSASLPLAIN returns a SASL/PLAIN enabled version of the given configuration
-func ConfigSASLPLAIN(existing *sarama.Config, username, password string) *sarama.Config {
+// SASLPLAIN returns a SASL/PLAIN enabled version of the given configuration
+func SASLPLAIN(existing *sarama.Config, username, password string) *sarama.Config {
 	var config sarama.Config
 	config = *existing
 	config.Net.SASL.Enable = true
@@ -42,9 +42,9 @@ func ConfigSASLPLAIN(existing *sarama.Config, username, password string) *sarama
 	return &config
 }
 
-// ConfigSASLSCRAMSHA256 returns a SASLSCRAMSHA256 enabled version of the given configuration
+// SASLSCRAMSHA256 returns a SASLSCRAMSHA256 enabled version of the given configuration
 // Uses github.com/toventang/eklog/scram for SCRAMClientGeneratorFunc
-func ConfigSASLSCRAMSHA256(existing *sarama.Config, username, password string) *sarama.Config {
+func SASLSCRAMSHA256(existing *sarama.Config, username, password string) *sarama.Config {
 	var config sarama.Config
 	config = *existing
 	config.Net.SASL.Enable = true
@@ -57,9 +57,9 @@ func ConfigSASLSCRAMSHA256(existing *sarama.Config, username, password string) *
 	return &config
 }
 
-// ConfigSASLSCRAMSHA512 returns a SASLSCRAMSHA512 enabled version of the given configuration
+// SASLSCRAMSHA512 returns a SASLSCRAMSHA512 enabled version of the given configuration
 // Uses github.com/toventang/eklog/scram for SCRAMClientGeneratorFunc
-func ConfigSASLSCRAMSHA512(existing *sarama.Config, username, password string) *sarama.Config {
+func SASLSCRAMSHA512(existing *sarama.Config, username, password string) *sarama.Config {
 	var config sarama.Config
 	config = *existing
 	config.Net.SASL.Enable = true
