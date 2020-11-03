@@ -9,42 +9,30 @@ import (
 
 // KafkaAvroSyncProducer provides a kafka producer with avro encoding
 // Uses "github.com/Shopify/sarama".SyncProducer
-// Uses "github.com/riferrei/srclient".SchemaRegistryClient
+// Uses "github.com/AtakanColak/srclient".SchemaRegistryClient
 type KafkaAvroSyncProducer struct {
 	producer             sarama.SyncProducer
-	schemaRegistryClient *srclient.SchemaRegistryClient
+	schemaRegistryClient srclient.ISchemaRegistryClient
 
 	queue     chan sarama.ProducerMessage
 	queueLock sync.RWMutex
-
-	keySchemaIDMap     map[string]int
-	keySchemaIDMapLock sync.RWMutex
-
-	valueSchemaIDMap     map[string]int
-	valueSchemaIDMapLock sync.RWMutex
 }
 
 // NewKafkaAvroSyncProducer initalizes a KafkaAvroSyncProducer
-// kafkaBrokers: 			passed directly to sarama.NewSyncProducer
+// producer: 			sarama.SyncProducer instance to use
 // queueSize: 				size of the cached queues, will attempt to send when queue is full
-// producerConfig: 			passed directly to sarama.NewSyncProducer
 // schemaRegistryClient: 	used to fetch & cache avro schemas and codecs
-// WARNING use ProducerConfigDefault for producerConfig, customization is at your own risk
-func NewKafkaAvroSyncProducer(kafkaBrokers []string, queueSize int, producerConfig *sarama.Config, schemaRegistryClient *srclient.SchemaRegistryClient) (*KafkaAvroSyncProducer, error) {
-	producer, err := sarama.NewSyncProducer(kafkaBrokers, producerConfig)
-	if err != nil {
-		return nil, err
-	}
+// WARNING you should use ProducerConfigDefault for SyncProducer, customization is at your own risk
+func NewKafkaAvroSyncProducer(queueSize int, producer sarama.SyncProducer, schemaRegistryClient srclient.ISchemaRegistryClient) (*KafkaAvroSyncProducer, error) {
 	return &KafkaAvroSyncProducer{
 		producer:             producer,
 		schemaRegistryClient: schemaRegistryClient,
 		queue:                make(chan sarama.ProducerMessage, queueSize),
-		keySchemaIDMap:       make(map[string]int),
-		valueSchemaIDMap:     make(map[string]int),
 	}, nil
 }
 
 // SendMessage sends the given message, doesn't send the messages in the queue
+// Use SendMessages instead if you have multiple messages to send
 func (kap *KafkaAvroSyncProducer) SendMessage(msg *sarama.ProducerMessage) error {
 	return kap.SendMessages([]*sarama.ProducerMessage{msg})
 }
@@ -55,52 +43,26 @@ func (kap *KafkaAvroSyncProducer) SendMessages(msgs []*sarama.ProducerMessage) e
 }
 
 // GetSchemas of a given topic, schemaIDs are cached as part of optimization
-// You may call FlushSchemaCache if there is an update to schemas in the schema registry
 func (kap *KafkaAvroSyncProducer) GetSchemas(topic string, keyIsAvro bool, valueIsAvro bool) (keySchema *srclient.Schema, valueSchema *srclient.Schema, err error) {
 
-	getAndCacheSchemaID := func(topic string, isAvro, isKey bool, cache map[string]int, mutex *sync.RWMutex, client *srclient.SchemaRegistryClient) (*srclient.Schema, error) {
+	getSchema := func(isAvro, isKey bool) (*srclient.Schema, error) {
 		if !isAvro {
 			return nil, nil
 		}
-
-		mutex.RLock()
-		id, ok := cache[topic]
-		mutex.RUnlock()
-		if ok {
-			return client.GetSchema(id)
-		}
-
-		schema, err := client.GetLatestSchema(topic, isKey)
-		if err == nil {
-			mutex.Lock()
-			defer mutex.Unlock()
-			cache[topic] = schema.ID()
-		}
-		return schema, err
+		return kap.schemaRegistryClient.GetSchemaBySubject(topic, isKey)
 	}
 
-	keySchema, err = getAndCacheSchemaID(topic, keyIsAvro, true, kap.keySchemaIDMap, &kap.keySchemaIDMapLock, kap.schemaRegistryClient)
+	keySchema, err = getSchema(keyIsAvro, true)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	valueSchema, err = getAndCacheSchemaID(topic, valueIsAvro, false, kap.valueSchemaIDMap, &kap.valueSchemaIDMapLock, kap.schemaRegistryClient)
+	valueSchema, err = getSchema(valueIsAvro, false)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	return keySchema, valueSchema, nil
-}
-
-// FlushSchemaIDCache to get latest schemas
-func (kap *KafkaAvroSyncProducer) FlushSchemaIDCache() {
-	kap.keySchemaIDMapLock.Lock()
-	kap.keySchemaIDMap = make(map[string]int)
-	kap.keySchemaIDMapLock.Unlock()
-
-	kap.valueSchemaIDMapLock.Lock()
-	kap.valueSchemaIDMap = make(map[string]int)
-	kap.valueSchemaIDMapLock.Unlock()
 }
 
 // PrepareProducerMessageToQueue calls GetSchemas and PrepareProducerMessage and uses internalized queue to cache messages concurrently
@@ -151,4 +113,24 @@ func (kap *KafkaAvroSyncProducer) SendQueue() error {
 	}
 	kap.queueLock.Unlock() // not deferred above because sending messages might take time
 	return kap.SendMessages(references)
+}
+
+// PrepareProducerMessage to be sent as a sarama.ProducerMessage
+// key and value must be AVRO PARSED ALREADY
+func PrepareProducerMessage(topic string, keySchema *srclient.Schema, valueSchema *srclient.Schema, key []byte, value []byte, keyIsAvro bool, valueIsAvro bool) (sarama.ProducerMessage, error) {
+	keyEncoder, err := newAvroEncoder(keySchema, keyIsAvro, key)
+	if err != nil {
+		return sarama.ProducerMessage{}, err
+	}
+
+	valueEncoder, err := newAvroEncoder(valueSchema, valueIsAvro, value)
+	if err != nil {
+		return sarama.ProducerMessage{}, err
+	}
+
+	return sarama.ProducerMessage{
+		Topic: topic,
+		Key:   keyEncoder,
+		Value: valueEncoder,
+	}, nil
 }

@@ -7,7 +7,7 @@ import (
 	"github.com/riferrei/srclient"
 )
 
-// avroEncoder encodes schemaID and Avro message.
+// avroEncoder encodes schemaID and Avro message in sarama.Encoder standard.
 type avroEncoder struct {
 	SchemaID int
 	Content  []byte
@@ -35,28 +35,7 @@ func (a *avroEncoder) Length() int {
 	return 5 + len(a.Content)
 }
 
-// PrepareProducerMessage to be sent as a sarama.ProducerMessage
-// key and value must be AVRO PARSED ALREADY
-func PrepareProducerMessage(topic string, keySchema *srclient.Schema, valueSchema *srclient.Schema, key []byte, value []byte, keyIsAvro bool, valueIsAvro bool) (sarama.ProducerMessage, error) {
-	keyEncoder, err := toSaramaEncoder(keySchema, keyIsAvro, key)
-	if err != nil {
-		return sarama.ProducerMessage{}, err
-	}
-
-	valueEncoder, err := toSaramaEncoder(valueSchema, valueIsAvro, value)
-	if err != nil {
-		return sarama.ProducerMessage{}, err
-	}
-
-	return sarama.ProducerMessage{
-		Topic: topic,
-		Key:   keyEncoder,
-		Value: valueEncoder,
-	}, nil
-}
-
-func toSaramaEncoder(schema *srclient.Schema, isAvro bool, value []byte) (sarama.Encoder, error) {
-
+func newAvroEncoder(schema *srclient.Schema, isAvro bool, value []byte) (sarama.Encoder, error) {
 	if !isAvro {
 		return sarama.StringEncoder(value), nil
 	}
