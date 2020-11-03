@@ -14,7 +14,7 @@ import (
 var (
 	schemaRegistryClient = srclient.CreateMockSchemaRegistryClient("https://schema.registry.com:8081")
 
-	predefMessageData = map[string]struct{string, []byte, []byte, *srclient.Schema, *srclient.Schema}{}
+	schemaTopicA = ``
 )
 
 func init() {
