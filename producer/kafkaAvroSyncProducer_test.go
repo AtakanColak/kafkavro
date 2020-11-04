@@ -5,32 +5,62 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/AtakanColak/kafkavro/config"
-	"github.com/AtakanColak/kafkavro/producer"
+	"github.com/Shopify/sarama"
 	"github.com/Shopify/sarama/mocks"
 	"github.com/riferrei/srclient"
+
+	"github.com/AtakanColak/kafkavro/config"
+	"github.com/AtakanColak/kafkavro/producer"
 )
 
 var (
-	schemaRegistryClient = srclient.CreateMockSchemaRegistryClient("https://schema.registry.com:8081")
+	testTopic = "topic_TestTopic"
+	testKey   = []byte("key_TestKey")
+	testValue = []byte("value_TestValue")
 
-	schemaTopicA = ``
+	testTopicA = "topic_TestTopicA"
+
+	mockSchemaRegistryClient = srclient.CreateMockSchemaRegistryClient("mock://url")
+
+	schemaA = `{"fields":[{"name":"Name","type":"string"},{"name":"Value","type":"long"}],"name":"A","type":"record"}`
+
+	schemaB = ``
 )
 
 func init() {
-
+	_, err := mockSchemaRegistryClient.CreateSchema(testTopicA, schemaA, srclient.Avro, false)
+	if err != nil {
+		panic(err.Error())
+	}
 }
 
-func initializeSchemaRegistryClient(t *testing.T) srclient.initializeSchemaRegistryClient {
-	var (
-		url    = "https://schema.registry.com:8081"
-		client = srclient.CreateMockSchemaRegistryClient(url)
-	)
-
-	return client
+func initDefaultProducer(t testing.TB) (*producer.KafkaAvroSyncProducer, *mocks.SyncProducer) {
+	mockProducer := mocks.NewSyncProducer(t, config.DefaultProducer())
+	avroSyncProducer, err := producer.NewKafkaAvroSyncProducer(100, mockProducer, mockSchemaRegistryClient)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	return avroSyncProducer, mockProducer
 }
 
-func valueCheckerEquals(ref []byte) mocks.ValueChecker {
+// PrepareProducerMessage is a wrapper for producer.PrepareProducerMessage for testing
+func PrepareProducerMessage(t testing.TB, testTopic string, keySchema, valueSchema *srclient.Schema, testKey, testValue []byte) sarama.ProducerMessage {
+	var keyIsAvro, valueIsAvro bool
+	if keySchema != nil {
+		keyIsAvro = true
+	}
+	if valueSchema != nil {
+		valueIsAvro = true
+	}
+
+	msg, err := producer.PrepareProducerMessage(testTopic, keySchema, valueSchema, testKey, testValue, keyIsAvro, valueIsAvro)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	return msg
+}
+
+func valueCheckerPlainEquals(ref []byte) mocks.ValueChecker {
 	return func(val []byte) error {
 		if !bytes.Equal(ref, val) {
 			return fmt.Errorf("expected '%s', got '%s'", ref, val)
@@ -39,40 +69,35 @@ func valueCheckerEquals(ref []byte) mocks.ValueChecker {
 	}
 }
 
-type kafkaAvroSyncProducerTestSetup struct {
-	keySchema   *srclient.Schema
-	valueSchema *srclient.Schema
-	key         []byte
-	value       []byte
-}
-
 func TestSendMessage(t *testing.T) {
-	var (
-		topic                = "topic_TestSentMessage"
-		key                  = []byte("key_TestSentMessage")
-		value                = []byte("value_TestSendMessage")
-		syncProducer         = mocks.NewSyncProducer(t, config.DefaultProducer())
-		schemaRegistryClient = initializeSchemaRegistryClient(t)
-	)
-	defer syncProducer.Close()
-	avroSyncProducer, err := producer.NewKafkaAvroSyncProducer(100, syncProducer, schemaRegistryClient)
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-	msg, err := producer.PrepareProducerMessage(topic, nil, nil, key, value, false, false)
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-	syncProducer.ExpectSendMessageWithCheckerFunctionAndSucceed(valueCheckerEquals(value))
+	avroSyncProducer, mockProducer := initDefaultProducer(t)
+	defer mockProducer.Close()
+	mockProducer.ExpectSendMessageWithCheckerFunctionAndSucceed(valueCheckerPlainEquals(testValue))
+	msg := PrepareProducerMessage(t, testTopic, nil, nil, testKey, testValue)
 	avroSyncProducer.SendMessage(&msg)
 }
 
 func TestSendMessages(t *testing.T) {
-	var (
-		topic                = "topic_TestSentMessages"
-		key                  = []byte("key_TestSentMessages")
-		value                = []byte("value_TestSendMessages")
-		syncProducer         = mocks.NewSyncProducer(t, config.DefaultProducer())
-		schemaRegistryClient = initializeSchemaRegistryClient(t)
-	)
+	avroSyncProducer, mockProducer := initDefaultProducer(t)
+	defer mockProducer.Close()
+	length := 35
+	msgs := make([]*sarama.ProducerMessage, length)
+	for i := 0; i < length; i++ {
+		mockProducer.ExpectSendMessageWithCheckerFunctionAndSucceed(valueCheckerPlainEquals(testValue))
+		msg := PrepareProducerMessage(t, testTopic, nil, nil, testKey, testValue)
+		msgs[i] = &msg
+	}
+
+	avroSyncProducer.SendMessages(msgs)
+}
+
+func TestGetSchemas(t *testing.T) {
+	avroSyncProducer, _ := initDefaultProducer(t)
+	_, valueSchema, err := avroSyncProducer.GetSchemas(testTopicA, false, true)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	if valueSchema.Schema() != schemaA {
+		t.Fatal("schemas are not equal")
+	}
 }
