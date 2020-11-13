@@ -76,59 +76,70 @@ func TestSchemaFromRecordDefinition(t *testing.T) {
 	checkSchema(expected, schema, t)
 }
 
-func TestSchemaFromStruct(t *testing.T) {
-	schema, err := generator.SchemaFromStruct(A{})
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-	checkSchema(expectedSchemaA, schema, t)
-}
-
-func TestRecordDefinitionFrom(t *testing.T) {
+func TestMakeAllFieldsNullable(t *testing.T) {
 	a := A{
 		Name:  "Ali",
 		Value: 23,
 	}
 
-	b := B{
-		Time:       time.Now(),
-		Host:       "centos",
-		AgentUUID:  "0-jgue--d",
-		MemoryFree: 5,
-		PID:        1,
-		CPUPercent: 5.0,
+	mapped, _ := a.ToMap()
+	record, err := generator.RecordDefinitionFromMap("A", "com.testing", mapped)
+	if err != nil {
+		t.Fatal(err.Error())
 	}
-
-	_, _ = a, b
-
-	t.Run("Map", func(t *testing.T) {
-		runTestRecordDefinitionFromMapCase := func(name, namespace, expected string, m generator.Mappable) func(*testing.T) {
-			return func(t *testing.T) {
-				mapped, err := m.ToMap()
-				if err != nil {
-					t.Fatal(err.Error())
-				}
-				record, err := generator.RecordDefinitionFromMap(name, namespace, mapped)
-				if err != nil {
-					t.Fatal(err.Error())
-				}
-				schema, err := generator.SchemaFromRecordDefinition(record)
-				if err != nil {
-					t.Fatal(err.Error())
-				}
-
-				checkSchema(expected, schema, t)
-			}
-
-		}
-		t.Run("A", runTestRecordDefinitionFromMapCase("A", "com.testing", "", a))
-		t.Run("B", runTestRecordDefinitionFromMapCase("B", "com.testing", "", b))
-	})
-
-	t.Run("Mappable", func(t *testing.T) {
-		t.Skip()
-	})
+	record = generator.MakeAllFieldsNullable(record)
+	t.Log(record.Schema())
 }
+
+// func TestRecordDefinitionFrom(t *testing.T) {
+// 	a := A{
+// 		Name:  "Ali",
+// 		Value: 23,
+// 	}
+
+// 	b := B{
+// 		Time:       time.Now(),
+// 		Host:       "centos",
+// 		AgentUUID:  "0-jgue--d",
+// 		MemoryFree: 5,
+// 		PID:        1,
+// 		CPUPercent: 5.0,
+// 	}
+
+// 	_, _ = a, b
+
+// 	t.Run("Map", func(t *testing.T) {
+// 		runTestRecordDefinitionFromMapCase := func(name, namespace, expected string, m generator.Mappable) func(*testing.T) {
+// 			return func(t *testing.T) {
+// 				mapped, err := m.ToMap()
+// 				if err != nil {
+// 					t.Fatal(err.Error())
+// 				}
+// 				record, err := generator.RecordDefinitionFromMap(name, namespace, mapped)
+// 				if err != nil {
+// 					t.Fatal(err.Error())
+// 				}
+// 				schema, err := generator.SchemaFromRecordDefinition(record)
+// 				if err != nil {
+// 					t.Fatal(err.Error())
+// 				}
+
+// 				checkSchema(expected, schema, t)
+// 			}
+
+// 		}
+// 		t.Run("A", runTestRecordDefinitionFromMapCase("A", "com.testing", "", a))
+// 		t.Run("B", runTestRecordDefinitionFromMapCase("B", "com.testing", "", b))
+// 	})
+// }
+
+// func TestSchemaFromStruct(t *testing.T) {
+// 	schema, err := generator.SchemaFromStruct(A{})
+// 	if err != nil {
+// 		t.Fatal(err.Error())
+// 	}
+// 	checkSchema(expectedSchemaA, schema, t)
+// }
 
 // func TestRecordFromMappable(t *testing.T) {
 

@@ -263,7 +263,7 @@ func MakeAllFieldsNullable(record *avro.RecordDefinition) *avro.RecordDefinition
 		fields[i] = MakeNullable(fields[i])
 	}
 
-	definitionI, _ := record.Definition(nil)
+	definitionI, _ := record.Definition(map[avro.QualifiedName]interface{}{})
 	var definition map[string]interface{}
 	if definitionAsMap, isMap := definitionI.(map[string]interface{}); isMap {
 		definition = definitionAsMap
