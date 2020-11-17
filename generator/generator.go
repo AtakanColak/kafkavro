@@ -6,22 +6,19 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"time"
 
 	avro "github.com/actgardner/gogen-avro/v7/schema"
 )
 
 var (
+	fullDef                         = make(map[avro.QualifiedName]interface{})
 	timestampPreference      string = "timestamp-millis"
 	timestampPreferenceMutex sync.RWMutex
-
-	TimestampMillisDefinition = map[string]interface{}{"logicalType": "timestamp-millis"}
 )
 
-// AvroTypeName of a given primitive Go value
+// TypeDefinition of a given primitive Go value
 // struct, map and arrays are not supported
-func AvroTypeName(value interface{}) (string, error) {
-	var typename string
+func TypeDefinition(value interface{}) (interface{}, error) {
 	err := fmt.Errorf("type %T is not supported by AvroTypeName", value)
 	if value == nil {
 		return "null", nil
@@ -29,47 +26,46 @@ func AvroTypeName(value interface{}) (string, error) {
 	t := reflect.TypeOf(value)
 	switch k := t.Kind(); k {
 	case reflect.Invalid:
-		typename = "null"
+		return "null", err
 	case reflect.Bool:
-		typename = "boolean"
+		return "boolean", nil
 	case reflect.String:
-		typename = "string"
+		return "string", nil
 	case reflect.Float32:
-		typename = "float"
+		return "float", nil
 	case reflect.Float64:
-		typename = "double"
+		return "double", nil
 	case reflect.Int8,
 		reflect.Uint8,
 		reflect.Int16,
 		reflect.Uint16,
 		reflect.Int32,
 		reflect.Int:
-		typename = "int"
+		return "int", nil
 	case reflect.Uint32,
 		reflect.Int64,
 		reflect.Uint64,
 		reflect.Uint:
-		typename = "long"
+		return "long", nil
 	case reflect.Slice:
 		if t.Elem().Kind() != reflect.Uint8 {
 			return "", err
 		}
-		typename = "bytes"
+		return "bytes", nil
 	case reflect.Struct:
 		if t.PkgPath() != "time" || t.Name() != "Time" {
 			return "", err
 		}
-		typename = "long"
+		return map[string]interface{}{"type": "long", "logicalType": timestampPreference}, nil
 	case reflect.Ptr:
 		nt := reflect.New(t.Elem())
 		if nt.IsNil() || !nt.CanInterface() {
 			return "", err
 		}
-		return AvroTypeName(nt.Elem().Interface())
+		return TypeDefinition(nt.Elem().Interface())
 	default:
 		return "", err
 	}
-	return typename, nil
 }
 
 // ChangeTimestampPreference for time.Time values
@@ -84,47 +80,22 @@ func ChangeTimestampPreference(preference string) {
 	}
 }
 
-// AvroDefinition returns definition for logicalTypes
-func AvroDefinition(value interface{}) map[string]interface{} {
-	timestampPreferenceMutex.RLock()
-	defer timestampPreferenceMutex.RUnlock()
-	switch value.(type) {
-	case time.Time:
-		return map[string]interface{}{"logicalType": timestampPreference}
-	default:
-		return nil
-	}
-}
-
 // Field is a wrapper for NewField
-func Field(name, avroType string, definition map[string]interface{}) *avro.Field {
-	if definition == nil {
-		definition = make(map[string]interface{})
+func Field(name string, typeDefinition interface{}, fieldDefinition map[string]interface{}) *avro.Field {
+	if fieldDefinition == nil {
+		fieldDefinition = make(map[string]interface{})
 	}
-	definition["name"] = name
-	return avro.NewField(name, avro.NewNullField(avroType), nil, false, nil, "", definition, 0, "")
+	fieldDefinition["name"] = name
+	return avro.NewField("", avro.NewNullField(typeDefinition), nil, false, nil, "", fieldDefinition, 0, "")
 }
 
 // MakeNullable is a wrapper to make an avro field nullable
 func MakeNullable(field *avro.Field) *avro.Field {
-	bufferedField := new(avro.Field)
-	*bufferedField = *field
-
 	nullField := avro.NewNullField("null")
-	definition, _ := bufferedField.Definition(nil)
-
-	// if is a logicalType, recreate the Field with logicalType embedded in it because gogen-avro doesn't support it
-	if logicalTypeI, exists := definition["logicalType"]; exists {
-		logicalType, ok := logicalTypeI.(string)
-		if !ok {
-			panic("logicalType is not provided as a string")
-		}
-
-		bufferedField = Field(field.SimpleName(), `{"type":"`+definition["type"].(string)+`","logicalType":"`+logicalType+`"}`, nil)
-	}
+	definition, _ := field.Definition(fullDef)
+	union := avro.NewUnionField("", []avro.AvroType{nullField, field.Type()}, []interface{}{"", ""})
 	definition["default"] = "null"
-	delete(definition, "logicalType")
-	return avro.NewField("", avro.NewUnionField("", []avro.AvroType{nullField, bufferedField.Type()}, []interface{}{map[string]interface{}{"type1": "rr"}, map[string]interface{}{"type1": "aa"}}), nil, false, nil, "", definition, 0, "")
+	return avro.NewField("", union, nil, false, nil, "", definition, 0, "")
 }
 
 // RecordDefinition is a wrapper for NewRecordDefinition
@@ -175,13 +146,11 @@ func SchemaFromRecordDefinition(record *avro.RecordDefinition) (string, error) {
 
 	marshalAvroField := func(of OrderedAvroField) string {
 		// there is an escape issue with logical types, this is to fix that
-		typeString := strings.ReplaceAll(string(of.Type), `\"`, `"`)
-		typeString = strings.ReplaceAll(typeString, `"{"`, `{"`)
-		typeString = strings.ReplaceAll(typeString, `"}"`, `"}`)
+		// typeString := FixStringEscapeInLogicalType(string(of.Type))
 
 		s := `{"name":"` + of.Name + `",`
 		s += addStringIfNotEmpty("doc", of.Doc, ",")
-		s += `"type":` + typeString + `,`
+		s += `"type":` + string(of.Type) + `,`
 		s += addRawMessageIfNotEmpty("logicalType", of.LogicalType, ",")
 		s += addRawMessageIfNotEmpty("default", of.Default, ",")
 		s += addRawMessageIfNotEmpty("order", of.Order, ",")
@@ -236,12 +205,11 @@ func SchemaFromRecordDefinition(record *avro.RecordDefinition) (string, error) {
 func FieldsFromMap(m map[string]interface{}) ([]*avro.Field, error) {
 	fields := make([]*avro.Field, 0)
 	for key, val := range m {
-		avroType, err := AvroTypeName(val)
+		avroTypeDef, err := TypeDefinition(val)
 		if err != nil {
 			return nil, err
 		}
-		definition := AvroDefinition(val)
-		fields = append(fields, Field(key, avroType, definition))
+		fields = append(fields, Field(key, avroTypeDef, nil))
 	}
 	return fields, nil
 }

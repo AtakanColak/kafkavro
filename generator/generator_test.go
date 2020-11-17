@@ -1,6 +1,7 @@
 package generator_test
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -10,6 +11,75 @@ import (
 
 	"github.com/AtakanColak/kafkavro/generator"
 )
+
+func marshalAndPrint(t testing.TB, a avro.AvroType) {
+	v, err := a.Definition(make(map[avro.QualifiedName]interface{}))
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	bytes, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	t.Log(string(bytes))
+}
+
+func schemaFromField(t testing.TB, field *avro.Field) {
+	fields := []*avro.Field{field}
+	record := generator.RecordDefinition("TestRecordName", "com.testing", nil, fields, nil)
+	schema, err := record.Schema()
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	t.Log(schema)
+	schema, err = generator.SchemaFromRecordDefinition(record)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	t.Log(schema)
+}
+
+func TestTimestamp(t *testing.T) {
+	// field := generator.Field("PageCount", "long", map[string]interface{}{"logicalType": "timestamp-millis"})
+	field := generator.Field("PageCount", map[string]interface{}{"type": "long", "logicalType": "timestamp-millis"}, nil)
+
+	// marshalAndPrint(t, field.Type())
+	schemaFromField(t, field)
+
+	field = generator.MakeNullable(field)
+	// marshalAndPrint(t, field.Type())
+	schemaFromField(t, field)
+}
+
+func TestJSONError(t *testing.T) {
+	field := generator.Field("PageCount", "long", map[string]interface{}{"logicalType": "timestamp-millis"})
+	marshalAndPrint(t, field.Type())
+
+	field = generator.MakeNullable(field)
+	marshalAndPrint(t, field.Type())
+
+	// longField := avro.NewLongField(map[string]interface{}{"type": "long", "logicalType": "timestamp-millis"})
+	longField := avro.NewNullField(map[string]interface{}{"type": "long", "logicalType": "timestamp-millis"})
+	marshalAndPrint(t, longField)
+
+	field = avro.NewField("", longField, nil, false, nil, "", map[string]interface{}{"name": "PageCount"}, 0, "")
+	marshalAndPrint(t, field.Type())
+	schemaFromField(t, field)
+
+	nullField := avro.NewNullField("null")
+
+	unionField := avro.NewUnionField("", []avro.AvroType{nullField, longField}, []interface{}{"", map[string]interface{}{"k": "v"}})
+	marshalAndPrint(t, unionField)
+
+	field = avro.NewField("PageCount", unionField, nil, false, nil, "", map[string]interface{}{"default": "null"}, 0, "")
+	marshalAndPrint(t, field.Type())
+
+	fields := []*avro.Field{field}
+
+	record := generator.RecordDefinition("TableName", "com.testing", nil, fields, nil)
+	schema, _ := record.Schema()
+	t.Log(schema)
+}
 
 // reference
 type A struct {
@@ -58,10 +128,22 @@ func checkSchema(expected, schema string, t testing.TB) {
 	}
 }
 
+func TestRecordDefinition(t *testing.T) {
+	fields := []*avro.Field{
+		generator.Field("fieldA", "string", nil),
+		generator.Field("fieldB", map[string]interface{}{"type": "long", "logicalType": "timestamp-millis"}, nil),
+		generator.MakeNullable(generator.Field("fieldC", "int", nil)),
+	}
+
+	record := generator.RecordDefinition("test", "com.testing", nil, fields, nil)
+	schema, _ := record.Schema()
+	t.Log(schema)
+}
+
 func TestSchemaFromRecordDefinition(t *testing.T) {
 	fields := []*avro.Field{
 		generator.Field("fieldA", "string", nil),
-		generator.Field("fieldB", "long", generator.TimestampMillisDefinition),
+		generator.Field("fieldB", map[string]interface{}{"type": "long", "logicalType": "timestamp-millis"}, nil),
 		generator.MakeNullable(generator.Field("fieldC", "int", nil)),
 	}
 
@@ -83,6 +165,7 @@ func TestMakeAllFieldsNullable(t *testing.T) {
 	}
 
 	mapped, _ := a.ToMap()
+	mapped["time"] = time.Now()
 	record, err := generator.RecordDefinitionFromMap("A", "com.testing", mapped)
 	if err != nil {
 		t.Fatal(err.Error())
