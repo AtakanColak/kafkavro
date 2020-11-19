@@ -94,7 +94,7 @@ func MakeNullable(field *avro.Field) *avro.Field {
 	nullField := avro.NewNullField("null")
 	definition, _ := field.Definition(fullDef)
 	union := avro.NewUnionField("", []avro.AvroType{nullField, field.Type()}, []interface{}{"", ""})
-	definition["default"] = "null"
+	definition["default"] = nil
 	return avro.NewField("", union, nil, false, nil, "", definition, 0, "")
 }
 
